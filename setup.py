@@ -14,4 +14,5 @@ setup(
     author="howong",
     author_email="howardwongjunyen@gmail.com",
     description="",
+    requires=["numpy", "pandas", "scipy", "setuptools", "statsmodels"],
 )
