@@ -10,7 +10,15 @@ import pandas as pd
 
 from timeseries.distribution import (
     Distribution,
+    GeneralizedError,
     MultivariateDistribution,
+    MultivariateLaplace,
+    MultivariateNormal,
+    MultivariateStudentsT,
+    Normal,
+    SkewStudent,
+    StudentsT,
+    SUPPORTED_MULTIVARIATE_DISTRIBUTIONS,
 )
 from timeseries.linalg import (
     corr_inverse_transform,
@@ -24,6 +32,8 @@ from timeseries.multivariate.base import (
     ConditionalCorrelationModel,
     LagLike,
 )
+
+__all__ = ["DCC", "DCCIntercept", "dcc_model"]
 
 
 class DCC(ConditionalCorrelationModel):
@@ -629,3 +639,107 @@ class DCCIntercept(ConditionalCorrelationModel):
         return ConditionalCorrelationForecast(
             h_fore, corr_fore, cov_fore, model_name, self._y_df.columns, start
         )
+
+
+def dcc_model(
+    y: Union[pd.DataFrame, np.ndarray],
+    m: int = 1,
+    l: int = 0,
+    n: int = 1,
+    dist: str = "normal",
+    joint: bool = False,
+    constant: bool = False,
+    lags: Optional[int] = None,
+    p: LagLike = 1,
+    o: LagLike = 0,
+    q: LagLike = 1,
+    univariate_dist: Union[str, List[str]] = "normal",
+) -> Union[DCC, DCCIntercept]:
+    """
+    Initialize a DCC or DCCIntercept model based on the specifications provided
+
+    Parameters
+    ----------
+    y : ndarray, DataFrame
+        The dependent variables
+    m : int
+        Order of symmetric innovations in the DCC model
+    l : int
+        Order of asymmetric innovations in the (asymmetric) DCC model
+    n : int
+        Order of lagged correlation in the DCC model
+    dist : str
+        Name of the multivariate error distribution.  Currently supported options are:
+            * Normal: 'norm', 'normal', 'gaussian' (default)
+            * Student's t: 't', 'stdt', 'studentst'
+            * Laplace: "laplace"
+    joint : bool
+        Flag indicating whether to use `DCCIntercept` where the correlation intercept is
+        estimated jointly with the rest of the parameters for the model dynamics
+    constant : bool
+        Flag indicating whether to include a constant in the mean model
+    lags : int, None
+        Number of lags to use in vector auto-regression. `None` corresponds to 0
+    p : int, list (int)
+        Integer(s) representing the order of symmetric innovations in the univariate
+        volatility models. If a list of integers, it must have length equal to the
+        number of columns of y
+    o : int, list (int)
+        Integer(s) representing the order of asymmetric innovations in the univariate
+        volatility models. If a list of integers, it must have length equal to the
+        number of columns of y
+    q : int, list (int)
+        Integer(s) representing the order of lagged conditional variance in the
+        univariate volatility models. If a list of integers, it must have length equal
+        to the number of columns of y
+    univariate_dist : str, list (str)
+        Name(s) of the error distributions for the univariate volatility models. Currently
+        supported options are:
+            * Normal: 'norm', 'normal', 'gaussian' (default)
+            * Student's t: 't', 'stdt', 'studentst'
+            * Skewed Student's t: 'skewstudent', 'skewt'
+            * Generalized Error Distribution: 'ged', 'generalized error'
+
+    Returns
+    -------
+    model : DCC, DCCIntercept
+        The model object
+    """
+    dist_name = dist.lower()
+    if dist_name not in SUPPORTED_MULTIVARIATE_DISTRIBUTIONS:
+        raise ValueError(f"{dist} is not a known multivariate distribution")
+    if dist_name == "laplace":
+        d = MultivariateLaplace()
+    elif dist_name in ("t", "stdt", "studentst"):
+        d = MultivariateStudentsT()
+    else:  # normal
+        d = MultivariateNormal()
+
+    if isinstance(univariate_dist, str):
+        uni_dist_names = [univariate_dist.lower()] * y.shape[1]
+    elif isinstance(univariate_dist, list):
+        if len(univariate_dist) != y.shape[1] or not all(
+            isinstance(s, str) for s in univariate_dist
+        ):
+            raise ValueError(f"univariate_dist must contain {y.shape[1]} strings")
+        uni_dist_names = [s.lower() for s in univariate_dist]
+    else:
+        raise TypeError("univariate_dist must be a str or a list of str")
+
+    uni_d = []
+    for uni_dist_name in uni_dist_names:
+        if uni_dist_name in ("ged", "generalized error"):
+            uni_d.append(GeneralizedError())
+        elif uni_dist_name in ("skewt", "skewstudent"):
+            uni_d.append(SkewStudent())
+        elif uni_dist_name in ("t", "stdt", "studentst"):
+            uni_d.append(StudentsT())
+        elif uni_dist_name in ("norm", "normal", "gaussian"):
+            uni_d.append(Normal())
+        else:
+            raise ValueError(f"{uni_dist_name} is not a known univariate distribution")
+
+    if joint:
+        return DCCIntercept(y, m, l, n, d, p, o, q, uni_d, constant, lags)
+
+    return DCC(y, m, l, n, d, p, o, q, uni_d, constant, lags)

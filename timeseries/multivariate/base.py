@@ -564,6 +564,8 @@ class ConditionalCorrelationModel(metaclass=ABCMeta):
         self.Nbar = self.std_data_asym.mean(axis=0)
         q = np.sqrt(np.diag(self.Qbar))
         self.Rbar = self.Qbar / np.outer(q, q)
+        self.Rbar = (self.Rbar + self.Rbar.T) / 2
+        np.fill_diagonal(self.Rbar, 1)
 
         qm12 = np.asarray(sqrtm(np.linalg.inv(self.Qbar)), dtype=np.float64)
         self.scale = np.max(np.linalg.eigvals(qm12 @ self.Nbar @ qm12))
