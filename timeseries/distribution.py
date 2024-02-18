@@ -3,7 +3,10 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 from scipy import stats
-from scipy.special import gammaln, kv
+from scipy.special import gamma, gammaln, kv
+
+from timeseries.linalg import matrix_power3d
+
 
 __all__ = [
     "Distribution",
@@ -554,3 +557,124 @@ class MultivariateLaplace(MultivariateDistribution):
         lls += np.log(kv(nu, np.sqrt(2 * ll_term)))
 
         return lls if individual else np.sum(lls)
+
+
+class MultivariateSkewStudent(MultivariateDistribution):
+    def __init__(self, ndim: int) -> None:
+        if not isinstance(ndim, (int, np.integer)) or ndim < 1:
+            raise ValueError("ndim must be an integer >= 1")
+        super().__init__(ndim)
+        self._name = "Multivariate Skew Student's t"
+        self.num_params: int = 1 + self.ndim
+
+    def parameter_names(self) -> List[str]:
+        return ["eta"] + [f"lambda[{i + 1}]" for i in range(self.ndim)]
+
+    def bounds(self) -> List[Tuple[float, float]]:
+        return [(2.05, 300.0)] + [(-1.0, 1.0)] * self.ndim
+
+    def constraints(self) -> Tuple[np.ndarray, np.ndarray]:
+        a = np.zeros((self.num_params * 2, self.num_params))
+        loc, value = 0, 1
+        for i in range(self.num_params * 2):
+            a[i, loc] = value
+            if value == -1:
+                loc += 1
+            value *= -1
+
+        b = np.array([2.05, -300.0] + [-1, -1] * self.ndim)
+
+        return a, b
+
+    def starting_values(self, std_resids: np.ndarray) -> np.ndarray:
+        kurt = stats.kurtosis(std_resids)
+        ndim = std_resids.shape[1]
+        kappa = np.maximum(-2 / (ndim + 2) * 0.99, kurt / 3)
+        avg_kappa = np.mean(kappa)
+
+        eta = 2 / avg_kappa + 4
+        skew = stats.skew(std_resids)
+        lam = np.sqrt(eta / (eta - 2)) * skew
+
+        return np.hstack([eta, lam])
+
+    def loglikelihood(
+        self,
+        parameters: np.ndarray,
+        resids: np.ndarray,
+        cov: np.ndarray,
+        individual: bool = False,
+    ) -> Union[float, np.ndarray]:
+        eta, lam = parameters[0], parameters[1:]
+        hm12 = matrix_power3d(cov, -0.5)
+        z = np.einsum("ijk,ik->ij", hm12, resids)
+        omega = self._const_omega(parameters)
+        xi = self._const_xi(parameters, omega)
+        q = self._const_q(z, xi, omega)
+        t_pdf_term = (hm12 - xi) @ lam * np.sqrt((eta + self.ndim) / (q + eta))
+
+        lls = np.log(2) + np.log(self._t_d(parameters, omega, q))
+        lls += np.log(stats.t.pdf(t_pdf_term, df=eta + self.ndim))
+        lls -= 0.5 * np.log(np.linalg.det(cov))
+
+        return lls if individual else np.sum(lls)
+
+    def _t_d(
+        self, parameters: np.ndarray, omega: np.ndarray, q: np.ndarray
+    ) -> np.ndarray:
+        eta = parameters[0]
+        lhs_numerator = gamma((eta + self.ndim) / 2)
+        lhs_denominator = (
+            np.sqrt(np.linalg.det(omega))
+            * (np.pi * eta) ** (self.ndim / 2)
+            * gamma(eta / 2)
+        )
+        rhs = (1 + q / eta) ** (-(eta + self.ndim) / 2)
+
+        return lhs_numerator / lhs_denominator * rhs
+
+    def _const_omega(self, parameters: np.ndarray) -> np.ndarray:
+        eta, lam = parameters[0], parameters[1:]
+        if np.all(lam == 0):
+            return (eta - 2) / eta * np.eye(self.ndim)
+
+        numerator = np.pi * gamma(eta / 2) ** 2 * (eta - (eta - 2) * lam.T @ lam)
+        denominator = (
+            2
+            * (lam.T @ lam)
+            * (eta - 2)
+            * (np.pi * gamma(eta / 2) ** 2 - (eta - 2) * gamma((eta - 1) / 2) ** 2)
+        )
+        inner_term = -1 + numerator / denominator * (-1 + self._const_k(parameters))
+        return (
+            (eta - 2)
+            / eta
+            * (np.eye(self.ndim) + 1 / (lam.T @ lam) * inner_term * np.outer(lam, lam))
+        )
+
+    @staticmethod
+    def _const_xi(parameters: np.ndarray, omega: np.ndarray) -> np.ndarray:
+        eta, lam = parameters[0], parameters[1:]
+        rhs = omega @ lam / np.sqrt(1 + lam.T @ omega @ lam)
+        lhs = -np.sqrt(eta / np.pi) * gamma((eta - 1) / 2) / gamma(eta / 2)
+
+        return lhs * rhs
+
+    @staticmethod
+    def _const_q(z: np.ndarray, xi: np.ndarray, omega: np.ndarray) -> np.ndarray:
+        return np.einsum("ij,jk,ik->i", z - xi, np.linalg.inv(omega), z - xi)
+
+    @staticmethod
+    def _const_k(parameters: np.ndarray) -> float:
+        eta, lam = parameters[0], parameters[1:]
+        numerator = (
+            4
+            * eta
+            * (eta - 2)
+            * (np.pi * gamma(eta / 2) ** 2 - (eta - 2) * gamma((eta - 1) / 2) ** 2)
+            * lam.T
+            @ lam
+        )
+        denominator = np.pi * gamma(eta / 2) ** 2 * (eta - (eta - 2) * lam.T @ lam) ** 2
+
+        return float(np.sqrt(1 + numerator / denominator))
