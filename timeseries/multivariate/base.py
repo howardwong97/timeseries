@@ -24,7 +24,7 @@ from timeseries.distribution import (
     MultivariateNormal,
     Normal,
 )
-from timeseries.linalg import outer_product2d
+from timeseries.linalg import outer_product2d, corr_inverse_vech
 from timeseries.univariate.garch import GARCH, GARCHResult
 from timeseries.utils.array import ensure2d
 from timeseries.utils.exceptions import (
@@ -882,6 +882,22 @@ class ConditionalCorrelationModelResult:
             cov = self._covariance.reshape((-1, len(self._cols)))
             return pd.DataFrame(cov, index=self._multi_index, columns=self._cols)
         return self._covariance
+
+    @cached_property
+    def correlation_intercept(self) -> Union[np.ndarray, pd.DataFrame]:
+        """Model intercept. If intercept is not jointly estimated, this is just the
+        long-run correlation"""
+        if self.model.num_intercept_params > 0:
+            params = np.asarray(self.params)
+            z = params[: self.model.num_intercept_params]
+            corr_intercept = corr_inverse_vech(z)
+        else:
+            corr_intercept = self.model.Rbar
+
+        if self._is_pandas:
+            return pd.DataFrame(corr_intercept, index=self._cols, columns=self._cols)
+        else:
+            return corr_intercept
 
     @cached_property
     def loglikelihood(self) -> float:
