@@ -612,7 +612,7 @@ class MultivariateSkewStudent(MultivariateDistribution):
         omega = self._const_omega(parameters)
         xi = self._const_xi(parameters, omega)
         q = self._const_q(z, xi, omega)
-        t_pdf_term = (hm12 - xi) @ lam * np.sqrt((eta + self.ndim) / (q + eta))
+        t_pdf_term = (z - xi) @ lam * np.sqrt((eta + self.ndim) / (q + eta))
 
         lls = np.log(2) + np.log(self._t_d(parameters, omega, q))
         lls += np.log(stats.t.pdf(t_pdf_term, df=eta + self.ndim))
