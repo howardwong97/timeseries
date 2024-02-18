@@ -18,6 +18,7 @@ __all__ = [
     "MultivariateNormal",
     "MultivariateStudentsT",
     "MultivariateLaplace",
+    "MultivariateSkewStudent",
     "SUPPORTED_UNIVARIATE_DISTRIBUTIONS",
 ]
 
