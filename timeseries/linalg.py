@@ -83,7 +83,7 @@ def corr_transform(corr: np.ndarray) -> np.ndarray:
     ) or not np.array_equal(corr, corr.T):
         raise ValueError("corr must be a correlation matrix")
 
-    z = np.asarray(logm, dtype=np.float64)[np.triu_indices(corr.shape[0], 1)]
+    z = np.asarray(logm(corr), dtype=np.float64)[np.triu_indices(corr.shape[0], 1)]
 
     return z
 
