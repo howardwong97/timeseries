@@ -306,7 +306,7 @@ class DCC(ConditionalCorrelationModel):
         """
         corr = self.compute_correlation(parameters, np.zeros_like(self.std_data))
         cov = corr * self._hh
-        llf = self.distribution.loglikelihood(np.empty(0), self.resids, cov)
+        llf = self._normal.loglikelihood(np.empty(0), self.resids, cov)
 
         return float(llf)
 
@@ -565,7 +565,7 @@ class DCCIntercept(ConditionalCorrelationModel):
         """
         corr = self.compute_correlation(parameters, np.zeros_like(self.std_data))
         cov = corr * self._hh
-        llf = self.distribution.loglikelihood(np.empty(0), self.resids, cov)
+        llf = self._normal.loglikelihood(np.empty(0), self.resids, cov)
 
         return float(llf)
 
